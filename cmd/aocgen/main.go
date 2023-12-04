@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
+	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"aocgen/pkg/aoc"
@@ -19,6 +22,14 @@ import (
 )
 
 var year, day int
+var cpuProfile, memProfile bool
+var cpuProfileRate int
+
+var onStopProfiling func()
+var profilingOnce sync.Once
+
+const cpuProfileFile = "cpuprofile.prof"
+const memProfileFile = "memprofile.prof"
 
 var benchCmd = &cobra.Command{
 	Use:   "bench",
@@ -174,15 +185,12 @@ var runCmd = &cobra.Command{
 	},
 }
 
-var rootCmd = &cobra.Command{
-	Use:   "aoc",
-	Short: "AOC is a tool to support completing Advent of Code puzzles",
-	Long:  "AOC supports generating puzzle data, including inputs directly from the website, and benchmarking answers",
-}
-
 func Execute() {
 	rootCmd.PersistentFlags().IntVarP(&year, "year", "y", 0, "year input")
 	rootCmd.PersistentFlags().IntVarP(&day, "day", "d", 0, "day input")
+	rootCmd.PersistentFlags().BoolVar(&cpuProfile, "cpu-profile", false, fmt.Sprintf("write cpu profile to file (%s)", cpuProfileFile))
+	rootCmd.PersistentFlags().BoolVar(&memProfile, "mem-profile", false, fmt.Sprintf("write memory profile to file (%s)", memProfileFile))
+	rootCmd.PersistentFlags().IntVar(&cpuProfileRate, "cpu-profile-rate", 1000000, "sets the CPU profiling rate to hz samples per second")
 
 	rootCmd.AddCommand(benchCmd)
 	rootCmd.AddCommand(buildCmd)
@@ -192,9 +200,19 @@ func Execute() {
 	rootCmd.AddCommand(rmCmd)
 	rootCmd.AddCommand(runCmd)
 
+	defer stopProfiling()
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+var rootCmd = &cobra.Command{
+	Use:   "aoc",
+	Short: "AOC is a tool to support completing Advent of Code puzzles",
+	Long:  "AOC supports generating puzzle data, including inputs directly from the website, and benchmarking answers",
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		onStopProfiling = initProfiling(cpuProfile, memProfile)
+	},
 }
 
 func runYear(year int) {
@@ -206,6 +224,61 @@ func runYear(year int) {
 
 func runDay(year, day int) {
 	aoc.Run(year, day, aoc.NewPuzzle(year, day), aoc.Input(year, day))
+}
+
+func initProfiling(cpuProfile, memProfile bool) (stop func()) {
+	var doOnStop []func()
+	stop = func() {
+		for _, d := range doOnStop {
+			if d != nil {
+				d()
+			}
+		}
+	}
+
+	if cpuProfile {
+		logrus.Info("CPU profile enabled")
+		f, err := os.Create(cpuProfileFile)
+		if err != nil {
+			logrus.Error("Could not create CPU profile file")
+			return stop
+		}
+		runtime.SetCPUProfileRate(cpuProfileRate)
+		err = pprof.StartCPUProfile(f)
+		if err != nil {
+			logrus.Error("Could not start CPU profiling")
+			return stop
+		}
+		// Add function to stop cpu profiling to doOnStop list
+		doOnStop = append(doOnStop, func() {
+			pprof.StopCPUProfile()
+			_ = f.Close()
+			logrus.Info("CPU profile stopped")
+		})
+	}
+
+	if memProfile {
+		logrus.Info("Memory profile enabled")
+		f, err := os.Create(memProfileFile)
+		if err != nil {
+			logrus.Error("Could not create memory profile file")
+			return stop
+		}
+		// Add function to stop memory profiling to doOnStop list
+		doOnStop = append(doOnStop, func() {
+			_ = pprof.WriteHeapProfile(f)
+			_ = f.Close()
+			logrus.Info("Memory profile stopped")
+		})
+	}
+
+	return stop
+}
+
+func stopProfiling() {
+	if onStopProfiling != nil {
+		profilingOnce.Do(onStopProfiling)
+	}
 }
 
 func main() {
