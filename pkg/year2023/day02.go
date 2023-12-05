@@ -1,7 +1,6 @@
 package year2023
 
 import (
-	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -64,7 +63,6 @@ func isValidGame(cubeCounts []map[string]int, targetCounts map[string]int) bool 
 		for color, count := range cubeCounts[i] {
 			targetCount, exists := targetCounts[color]
 			if !exists || count > targetCount {
-				fmt.Printf("Fail: %s == %d\n", color, count)
 				return false
 			}
 		}
