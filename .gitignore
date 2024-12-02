@@ -1,1 +1,3 @@
 bin/aocgen
+cpuprofile.prof
+memprofile.prof
