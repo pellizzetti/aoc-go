@@ -5,11 +5,13 @@ import (
 	"aocgen/pkg/year2015"
 	"aocgen/pkg/year2022"
 	"aocgen/pkg/year2023"
+	"aocgen/pkg/year2024"
 )
 
 func RegisterYears() {
 	year2015.Init()
 	year2022.Init()
 	year2023.Init()
+	year2024.Init()
 
 }
